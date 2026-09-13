@@ -1,0 +1,29 @@
+# Lokalne środowiska wirtualne
+.venv
+**/.venv
+venv/
+env/
+
+# Skompilowany cache Pythona
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*$py.class
+
+# System kontroli wersji
+.git
+.gitignore
+
+# Pliki systemowe i IDE
+.DS_Store
+.idea/
+.vscode/
+
+# Zmienne środowiskowe i sekrety
+.env
+*.env
+
+# Pliki konfiguracyjne i dokumentacja (niewymagane w runtime)
+README.md
+Dockerfile*
+docker-compose*.yml
