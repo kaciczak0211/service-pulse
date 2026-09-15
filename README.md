@@ -1,6 +1,6 @@
 # ServicePulse 🚀
 
-A lightweight, containerized uptime and service health monitoring platform built with **FastAPI**, **PostgreSQL**, and **Docker**.
+A lightweight, containerized uptime and service health monitoring platform built with **FastAPI**, **PostgreSQL**, **NGINX**, and **Docker**.
 
 ---
 
@@ -10,50 +10,61 @@ ServicePulse is designed to monitor external and internal services via automated
 
 ---
 
-## Current Architecture (Phase 1)
+## Current Architecture (Phase 2)
 
-The system currently runs as a multi-container environment orchestrated with **Docker Compose**:
+The system operates as a multi-container environment orchestrated with **Docker Compose**, guarded by an **NGINX Reverse Proxy** as the single public entrypoint:
 
 ```text
 [ Client / Browser ]
          │
-         ▼  (Host port :8080)
-┌──────────────────────────────────────────────┐
-│ Docker Bridge Network                        │
-│                                              │
-│   ┌───────────────────────────┐              │
-│   │ service-pulse (FastAPI)   │              │
-│   │ - REST API                │              │
-│   │ - HTTP Health Probes      │              │
-│   │ - SQLAlchemy ORM          │              │
-│   └─────────────┬─────────────┘              │
-│                 │                            │
-│                 ▼ (Internal DNS: db:5432)    │
-│   ┌───────────────────────────┐              │
-│   │ service-pulse-db          │              │
-│   │ - PostgreSQL 16           │              │
-│   │ - Named Volume Persistence│              │
-│   └───────────────────────────┘              │
-└──────────────────────────────────────────────┘
+         ▼  (Host port :80 - Standard HTTP)
+┌──────────────────────────────────────────────────────────────┐
+│ Docker Bridge Network                                        │
+│                                                              │
+│   ┌────────────────────────────────────────┐                 │
+│   │ service-pulse-nginx (NGINX Alpine)     │                 │
+│   │ - Edge Reverse Proxy & Web Server      │                 │
+│   │ - Preserves Client IP Headers          │                 │
+│   │ - Hides Internal Application Topology  │                 │
+│   └───────────────────┬────────────────────┘                 │
+│                       │                                      │
+│                       ▼ (Internal DNS: service-pulse:8000)   │
+│   ┌────────────────────────────────────────┐                 │
+│   │ service-pulse (FastAPI)                │                 │
+│   │ - REST API & Synthetic HTTP Probes     │                 │
+│   │ - SQLAlchemy ORM                       │                 │
+│   │ - Internal Only (No host ports exposed)│                 │
+│   └───────────────────┬────────────────────┘                 │
+│                       │                                      │
+│                       ▼ (Internal DNS: db:5432)              │
+│   ┌────────────────────────────────────────┐                 │
+│   │ service-pulse-db (PostgreSQL 16)       │                 │
+│   │ - Relational Storage                   │                 │
+│   │ - Named Volume Persistence             │                 │
+│   └────────────────────────────────────────┘                 │
+└──────────────────────────────────────────────────────────────┘
 ```
 
 ### Key Engineering Features Implemented:
+- **Edge Reverse Proxy (NGINX)**:
+  - Serves as the single ingress point on port `80`, routing traffic to the internal `service-pulse` upstream.
+  - Passes essential proxy headers (`X-Real-IP`, `X-Forwarded-For`, `Host`, `X-Forwarded-Proto`) to maintain client transparency.
+  - Isolates and shields application runtime from direct public network exposure.
 - **Container Isolation & Networking**:
-  - Services communicate over an internal Docker bridge network using Docker's embedded DNS server (`db:5432`), strictly isolating internal database traffic from the public network.
-  - Decoupled container runtime (`localhost` loopback isolation).
+  - Inter-service communication handled via Docker's internal bridge network and embedded DNS resolution (`service-pulse:8000`, `db:5432`).
 - **Data Persistence**:
-  - PostgreSQL state is persisted using Docker named volumes (`postgres_data`) to prevent data loss across container lifecycles.
+  - PostgreSQL state persisted using Docker named volumes (`postgres_data`) to prevent data loss across container restarts.
 - **Dynamic Dependency Orchestration**:
-  - Implemented health checks (`pg_isready`) and conditional dependency startup (`depends_on: condition: service_healthy`) to ensure database readiness before API initialization.
+  - Health checks (`pg_isready`) and conditional startup (`depends_on: condition: service_healthy`) to ensure database availability prior to API boot.
 - **Synthetic Monitoring Engine**:
-  - HTTP probe engine with timeout protection that evaluates HTTP response status codes (2xx/3xx vs 4xx/5xx/network errors) to determine real-time `UP` / `DOWN` service availability.
+  - HTTP probe engine evaluating response status codes (2xx/3xx vs 4xx/5xx/timeout) to determine real-time `UP` / `DOWN` service availability.
 
 ---
 
 ## API Reference
 
-Interactive API documentation (Swagger UI) is available at:
-`http://localhost:8080/docs`
+Interactive API documentation (Swagger UI) is available through the NGINX reverse proxy at:
+**`http://localhost/docs`**
 
 ### Key Endpoints:
 | Method | Endpoint | Description |
@@ -87,9 +98,9 @@ Interactive API documentation (Swagger UI) is available at:
    docker compose ps
    ```
 
-4. View logs:
+4. Stream live multi-container logs:
    ```bash
-   docker compose logs -f
+   docker compose logs -f nginx service-pulse
    ```
 
 ---
@@ -97,8 +108,8 @@ Interactive API documentation (Swagger UI) is available at:
 ## Roadmap
 
 - [x] **Phase 1**: Containerization & Persistence (FastAPI + PostgreSQL + Docker Compose)
-- [ ] **Phase 2**: Reverse Proxy & Edge Routing with Nginx
-- [ ] **Phase 3**: Container Security & Process Management (non-root execution, Linux signals)
+- [x] **Phase 2**: Reverse Proxy & Edge Routing with NGINX
+- [ ] **Phase 3**: Container Security & Process Management (non-root execution, Linux signals, backup scripts)
 - [ ] **Phase 4**: Automated CI/CD Pipeline via GitHub Actions
 - [ ] **Phase 5**: Orchestration with Kubernetes (K8s Manifests: Deployments, Services, ConfigMaps)
 - [ ] **Phase 6**: Observability & Metrics Export (Prometheus format)

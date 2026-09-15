@@ -2,84 +2,59 @@
 services:
 
   # -------------------------------------------------------------------------
-  # Service 1: The FastAPI web application
+  # Service 1: The NGINX Reverse Proxy (The only public entry point!)
+  # -------------------------------------------------------------------------
+  nginx:
+    image: nginx:alpine
+    container_name: service-pulse-nginx
+    restart: unless-stopped
+    # Public entrypoint on standard HTTP port 80
+    ports:
+      - "80:80"
+    # Mount custom nginx.conf into the container (read-only for security)
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - service-pulse
+
+  # -------------------------------------------------------------------------
+  # Service 2: The FastAPI web application (Internal only - no public ports)
   # -------------------------------------------------------------------------
   service-pulse:
-    # Build instructions to create the Docker image for this service
     build:
-      # Build context: the directory sent to Docker daemon (current directory '.')
       context: .
-      # Specific Dockerfile to use for building the image
       dockerfile: Dockerfile
-
-    # Custom name for the running container (default would be <project>_<service>_1)
     container_name: service-pulse
-
-    # Port mapping in the format: "<HOST_PORT>:<CONTAINER_PORT>"
-    # Traffic to port 8080 on your machine is forwarded to port 8000 inside the container
-    ports:
-      - "8080:8000"
-
-    # Environment variables injected into the container at runtime
+    # Note: 'ports' mapping is removed! FastAPI is hidden inside Docker's network.
     environment:
-      # Database connection string used by your Python code to connect to PostgreSQL
-      # Note: 'db' is the hostname, resolved automatically by Docker's internal DNS
       - DATABASE_URL=postgresql://postgres:postgres@db:5432/service_pulse
-
-    # Defines startup order and dependencies between services
     depends_on:
-      # This service depends on the 'db' service
       db:
-        # Wait until 'db' passes its healthcheck before starting 'service-pulse'
         condition: service_healthy
 
   # -------------------------------------------------------------------------
-  # Service 2: The PostgreSQL database
+  # Service 3: The PostgreSQL database (Internal persistence)
   # -------------------------------------------------------------------------
   db:
-    # Pre-built official Docker image from Docker Hub (lightweight Alpine Linux version)
     image: postgres:16-alpine
-
-    # Custom name for the database container
     container_name: service-pulse-db
-
-    # Restart policy: automatically restart the container unless manually stopped
     restart: unless-stopped
-
-    # Configuration variables required by the official Postgres image to initialize the DB
     environment:
-      # Default superuser username
       POSTGRES_USER: postgres
-      # Password for the superuser
       POSTGRES_PASSWORD: postgres
-      # Name of the initial database created on first startup
       POSTGRES_DB: service_pulse
-
-    # Port mapping: allows connecting to Postgres from host machine tools (e.g. DBeaver)
-    # Exposes port 5432 on your Mac, forwarded to 5432 in the Postgres container
     ports:
       - "5432:5432"
-
-    # Mounts persistent storage to prevent data loss when container stops or is deleted
-    # Format: "<VOLUME_NAME>:<CONTAINER_PATH>"
-    # /var/lib/postgresql/data is where PostgreSQL stores its actual table and data files
     volumes:
       - postgres_data:/var/lib/postgresql/data
-
-    # Periodic check to determine if PostgreSQL is truly ready to handle queries
     healthcheck:
-      # Command executed inside the container; 'pg_isready' returns 0 if DB is accepting connections
       test: ["CMD-SHELL", "pg_isready -U postgres -d service_pulse"]
-      # How often to run the healthcheck
       interval: 5s
-      # Maximum time allowed for the healthcheck command to complete
       timeout: 5s
-      # Number of consecutive failures needed to declare the container unhealthy
       retries: 5
 
 # ---------------------------------------------------------------------------
 # Named volumes: managed by Docker outside container lifecycles for persistence
 # ---------------------------------------------------------------------------
 volumes:
-  # Declares the 'postgres_data' volume so Docker creates and preserves it on disk
   postgres_data:
